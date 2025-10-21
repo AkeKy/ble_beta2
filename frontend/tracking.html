@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time BLE Tracking</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+        
+        .header h1 {
+            font-size: 1.8em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .header-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        .floor-selector {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            color: white;
+            font-size: 1em;
+            cursor: pointer;
+        }
+        
+        .floor-selector option {
+            background: #2a2a3e;
+            color: white;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 1em;
+        }
+        
+        .btn-start {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .btn-start:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+        
+        .btn-stop {
+            background: #f44336;
+            color: white;
+        }
+        
+        .btn-stop:hover {
+            background: #da190b;
+            transform: scale(1.05);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .main-container {
+            display: flex;
+            height: calc(100vh - 70px);
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: #16213e;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 2px solid #0f3460;
+        }
+        
+        .map-container {
+            flex: 1;
+            position: relative;
+            background: #0f3460;
+            overflow: hidden;
+        }
+        
+        .floor-plan {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            max-width: 90%;
+            max-height: 90%;
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(102, 126, 234, 0.5);
+        }
+        
+        .marker {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+        
+        .marker.gateway {
+            background: #4caf50;
+            border: 3px solid #fff;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.8);
+        }
+        
+        .marker.tag {
+            background: #ff4757;
+            border: 4px solid #fff;
+            width: 30px;
+            height: 30px;
+            box-shadow: 0 0 20px rgba(255, 71, 87, 1);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 20px rgba(255, 71, 87, 1);
+            }
+            50% {
+                box-shadow: 0 0 40px rgba(255, 71, 87, 1);
+            }
+        }
+        
+        .marker-label {
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.75em;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        
+        .info-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .info-card h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+            font-size: 1.1em;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        
+        .info-label {
+            color: #aaa;
+            font-size: 0.9em;
+        }
+        
+        .info-value {
+            color: #fff;
+            font-weight: 600;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-indicator.online {
+            background: #4caf50;
+            box-shadow: 0 0 10px #4caf50;
+        }
+        
+        .status-indicator.offline {
+            background: #f44336;
+        }
+        
+        .gateway-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .gateway-item {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            font-size: 0.85em;
+        }
+        
+        .gateway-item .mac {
+            color: #667eea;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        
+        .gateway-item .signal {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        
+        .signal-bar {
+            height: 4px;
+            background: #667eea;
+            border-radius: 2px;
+            flex: 1;
+        }
+        
+        .coordinates {
+            background: rgba(102, 126, 234, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+        
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        
+        .distance-circle {
+            position: absolute;
+            border: 2px dashed rgba(76, 175, 80, 0.3);
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>
+            Real-time BLE Tracking
+        </h1>
+        <div class="header-controls">
+            <select id="floorSelector" class="floor-selector">
+                <option value="1" selected>Floor 1</option>
+                <option value="2">Floor 2</option>
+                <option value="3">Floor 3</option>
+                <option value="4">Floor 4</option>
+                <option value="5">Floor 5</option>
+            </select>
+            <button id="startBtn" class="btn btn-start">Start Tracking</button>
+            <button id="stopBtn" class="btn btn-stop" disabled>Stop Tracking</button>
+        </div>
+    </div>
+    
+    <div class="main-container">
+        <div class="sidebar">
+            <div class="info-card">
+                <h3>Connection Status</h3>
+                <div class="info-row">
+                    <span class="info-label">WebSocket</span>
+                    <span class="info-value">
+                        <span class="status-indicator offline" id="wsStatus"></span>
+                        <span id="wsStatusText">Disconnected</span>
+                    </span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Tracking</span>
+                    <span class="info-value" id="trackingStatus">Stopped</span>
+                </div>
+            </div>
+            
+            <div class="info-card">
+                <h3>Tag Position</h3>
+                <div class="info-row">
+                    <span class="info-label">Tag MAC</span>
+                    <span class="info-value" style="font-family: monospace; font-size: 0.85em;">C4:D3:6A:D8:71:76</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Floor</span>
+                    <span class="info-value" id="currentFloor">5</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Visible</span>
+                    <span class="info-value" id="tagVisible">Unknown</span>
+                </div>
+                <div class="coordinates">
+                    <div>X: <span id="posX">-</span> px</div>
+                    <div>Y: <span id="posY">-</span> px</div>
+                    <div>Accuracy: <span id="accuracy">-</span> m</div>
+                </div>
+            </div>
+            
+            <div class="info-card">
+                <h3>Detected Gateways</h3>
+                <div id="gatewayList" class="gateway-list">
+                    <div class="loading">Waiting for data...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="map-container" id="mapContainer">
+            <img id="floorPlan" class="floor-plan" src="" alt="Floor Plan" style="display: none;">
+            <div class="no-data" id="noData">
+                <h2>No Floor Plan</h2>
+                <p>Please upload floor plan image for Floor <span id="noDataFloor">5</span></p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // WebSocket connection
+        const socket = io('http://localhost:5000');
+        
+        // State
+        let currentFloor = 5;
+        let isTracking = false;
+        let floorPlanLoaded = false;
+        let gateways = [];
+        let tagPosition = null;
+        
+        // Map dimensions (เมตร) - ต้องตรงกับ gateway_registration.js
+        const MAP_WIDTH = 80;  // 80 เมตร
+        const MAP_HEIGHT = 60; // 60 เมตร
+        
+        // Elements
+        const floorSelector = document.getElementById('floorSelector');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const wsStatus = document.getElementById('wsStatus');
+        const wsStatusText = document.getElementById('wsStatusText');
+        const trackingStatus = document.getElementById('trackingStatus');
+        const currentFloorSpan = document.getElementById('currentFloor');
+        const tagVisible = document.getElementById('tagVisible');
+        const posX = document.getElementById('posX');
+        const posY = document.getElementById('posY');
+        const accuracy = document.getElementById('accuracy');
+        const gatewayList = document.getElementById('gatewayList');
+        const mapContainer = document.getElementById('mapContainer');
+        const floorPlan = document.getElementById('floorPlan');
+        const noData = document.getElementById('noData');
+        const noDataFloor = document.getElementById('noDataFloor');
+        
+        // WebSocket events
+        socket.on('connect', () => {
+            console.log('WebSocket connected');
+            wsStatus.className = 'status-indicator online';
+            wsStatusText.textContent = 'Connected';
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('WebSocket disconnected');
+            wsStatus.className = 'status-indicator offline';
+            wsStatusText.textContent = 'Disconnected';
+        });
+        
+        socket.on('tracking_status', (data) => {
+            console.log('Tracking status:', data);
+            if (data.status === 'started') {
+                isTracking = true;
+                trackingStatus.textContent = 'Active';
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            } else {
+                isTracking = false;
+                trackingStatus.textContent = 'Stopped';
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        });
+        
+        socket.on('position_update', (data) => {
+            console.log('Position update:', data);
+            updatePosition(data);
+        });
+        
+        socket.on('tracking_error', (data) => {
+            console.error('Tracking error:', data);
+            alert('Tracking error: ' + data.error);
+        });
+        
+        // UI event handlers
+        floorSelector.addEventListener('change', (e) => {
+            currentFloor = parseInt(e.target.value);
+            currentFloorSpan.textContent = currentFloor;
+            noDataFloor.textContent = currentFloor;
+            loadFloorPlan();
+            loadGateways();
+        });
+        
+        startBtn.addEventListener('click', () => {
+            socket.emit('start_tracking', {
+                floor: currentFloor,
+                interval: 2
+            });
+        });
+        
+        stopBtn.addEventListener('click', () => {
+            socket.emit('stop_tracking');
+        });
+        
+        // Load floor plan
+        async function loadFloorPlan() {
+            const imagePath = `images/floor${currentFloor}.png`;
+            
+            // Try to load image
+            const img = new Image();
+            img.onload = () => {
+                floorPlan.src = imagePath;
+                floorPlan.style.display = 'block';
+                noData.style.display = 'none';
+                floorPlanLoaded = true;
+                renderMarkers();
+            };
+            img.onerror = () => {
+                floorPlan.style.display = 'none';
+                noData.style.display = 'block';
+                floorPlanLoaded = false;
+            };
+            img.src = imagePath;
+        }
+        
+        // Load gateways
+        async function loadGateways() {
+            try {
+                const response = await fetch(`/api/gateways?floor=${currentFloor}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    gateways = data.gateways;
+                    renderMarkers();
+                }
+            } catch (error) {
+                console.error('Error loading gateways:', error);
+            }
+        }
+        
+        // Update position
+        function updatePosition(data) {
+            tagPosition = data;
+            
+            // Update UI
+            posX.textContent = data.x.toFixed(1);
+            posY.textContent = data.y.toFixed(1);
+            accuracy.textContent = data.accuracy ? data.accuracy.toFixed(2) : 'N/A';
+            tagVisible.textContent = 'Yes';
+            
+            // Update gateway list
+            updateGatewayList(data.gateways || []);
+            
+            // Render markers
+            renderMarkers();
+        }
+        
+        // Update gateway list
+        function updateGatewayList(detectedGateways) {
+            if (detectedGateways.length === 0) {
+                gatewayList.innerHTML = '<div class="loading">No gateways detected</div>';
+                return;
+            }
+            
+            gatewayList.innerHTML = detectedGateways.map(gw => {
+                const signalStrength = Math.min(100, Math.max(0, (gw.rssi + 100) * 2));
+                return `
+                    <div class="gateway-item">
+                        <div class="mac">${formatMac(gw.gateway_mac)}</div>
+                        <div class="signal">
+                            <div class="signal-bar" style="width: ${signalStrength}%"></div>
+                            <span>${gw.rssi} dBm</span>
+                        </div>
+                        <div style="margin-top: 5px; color: #aaa; font-size: 0.85em;">
+                            Distance: ${gw.distance.toFixed(1)} m
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Render markers on floor plan
+        function renderMarkers() {
+            if (!floorPlanLoaded) return;
+            
+            // Remove existing markers
+            document.querySelectorAll('.marker, .distance-circle').forEach(el => el.remove());
+            
+            const planRect = floorPlan.getBoundingClientRect();
+            const containerRect = mapContainer.getBoundingClientRect();
+            
+            // Render gateway markers
+            gateways.forEach(gw => {
+                const marker = document.createElement('div');
+                marker.className = 'marker gateway';
+                
+                // แปลงพิกัดจากเมตรเป็นพิกเซล
+                const pixelX = (gw.x / MAP_WIDTH) * planRect.width;
+                const pixelY = (gw.y / MAP_HEIGHT) * planRect.height;
+                
+                marker.style.left = (containerRect.width / 2 - planRect.width / 2 + pixelX) + 'px';
+                marker.style.top = (containerRect.height / 2 - planRect.height / 2 + pixelY) + 'px';
+                
+                const label = document.createElement('div');
+                label.className = 'marker-label';
+                // ใช้ชื่อ Gateway จากฐานข้อมูล หรือ MAC address ถ้าไม่มีชื่อ
+                label.textContent = gw.name || gw.mac_address.slice(-8);
+                marker.appendChild(label);
+                
+                mapContainer.appendChild(marker);
+            });
+            
+            // Render tag marker
+            if (tagPosition) {
+                const marker = document.createElement('div');
+                marker.className = 'marker tag';
+                
+                // แปลงพิกัดจากเมตรเป็นพิกเซล
+                const pixelX = (tagPosition.x / MAP_WIDTH) * planRect.width;
+                const pixelY = (tagPosition.y / MAP_HEIGHT) * planRect.height;
+                
+                marker.style.left = (containerRect.width / 2 - planRect.width / 2 + pixelX) + 'px';
+                marker.style.top = (containerRect.height / 2 - planRect.height / 2 + pixelY) + 'px';
+                
+                const label = document.createElement('div');
+                label.className = 'marker-label';
+                label.textContent = 'TAG';
+                marker.appendChild(label);
+                
+                mapContainer.appendChild(marker);
+            }
+        }
+        
+        // Format MAC address
+        function formatMac(mac) {
+            if (!mac) return 'Unknown';
+            return mac.match(/.{1,2}/g).join(':').toUpperCase();
+        }
+        
+        // Initialize
+        loadFloorPlan();
+        loadGateways();
+        
+        // Handle window resize
+        window.addEventListener('resize', renderMarkers);
+    </script>
+</body>
+</html>
+
