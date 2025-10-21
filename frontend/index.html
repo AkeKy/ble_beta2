@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLE Indoor Positioning System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+        
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .status-label {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .status-value {
+            color: #667eea;
+            font-weight: 500;
+        }
+        
+        .status-badge {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+        
+        .status-badge.online {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-badge.offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .menu-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .menu-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+            text-decoration: none;
+            color: white;
+        }
+        
+        .menu-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        
+        .menu-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+        
+        .menu-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .menu-description {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #667eea;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BLE Indoor Positioning</h1>
+        <p class="subtitle">ระบบติดตามตำแหน่ง BLE Tag ภายในอาคาร</p>
+        
+        <div class="status-card">
+            <h3 style="margin-bottom: 15px; color: #333;">สถานะระบบ</h3>
+            <div class="status-item">
+                <span class="status-label">Backend Server</span>
+                <span class="status-badge online" id="serverStatus">Online</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Target Tag</span>
+                <span class="status-value" id="targetTag">C4:D3:6A:D8:71:76</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Gateways Registered</span>
+                <span class="status-value" id="gatewayCount">Loading...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Tag Visibility</span>
+                <span class="status-badge offline" id="tagVisibility">Checking...</span>
+            </div>
+        </div>
+        
+        <div class="menu-grid">
+            <a href="gateway_registration.html" class="menu-card">
+                <div class="menu-icon">REG</div>
+                <div class="menu-title">Gateway Registration</div>
+                <div class="menu-description">ลงทะเบียนตำแหน่ง Gateway บนแผนผังอาคาร</div>
+            </a>
+            
+            <a href="tracking.html" class="menu-card">
+                <div class="menu-icon">TRACK</div>
+                <div class="menu-title">Real-time Tracking</div>
+                <div class="menu-description">ติดตามตำแหน่ง Tag แบบเรียลไทม์</div>
+            </a>
+            
+            <a href="statistics.html" class="menu-card">
+                <div class="menu-icon">STATS</div>
+                <div class="menu-title">Statistics</div>
+                <div class="menu-description">สถิติและ Heatmap การเคลื่อนที่</div>
+            </a>
+            
+            <a href="#" class="menu-card" onclick="testScraper(); return false;">
+                <div class="menu-icon">Test</div>
+                <div class="menu-title">Test Receiver</div>
+                <div class="menu-description">ทดสอบการรับข้อมูลจาก EazyTrax</div>
+            </a>
+        </div>
+        
+        <div class="footer">
+            <p>BLE Trilateration Indoor Positioning System</p>
+        </div>
+    </div>
+    
+    <script>
+        // Check authentication
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+            window.location.href = '/login.html';
+        }
+        
+        // Verify token
+        fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                localStorage.removeItem('auth_token');
+                window.location.href = '/login.html';
+            }
+        })
+        .catch(error => {
+            console.error('Error verifying token:', error);
+            localStorage.removeItem('auth_token');
+            window.location.href = '/login.html';
+        });
+        
+        // Check server status and load data
+        async function checkStatus() {
+            try {
+                // Check gateway count
+                const gatewayResponse = await fetch('/api/gateways');
+                const gatewayData = await gatewayResponse.json();
+                
+                if (gatewayData.success) {
+                    document.getElementById('gatewayCount').textContent = gatewayData.count;
+                }
+                
+                // Check receiver status
+                const receiverResponse = await fetch('/api/receiver/test');
+                const receiverData = await receiverResponse.json();
+                
+                if (receiverData.success) {
+                    const visibilityBadge = document.getElementById('tagVisibility');
+                    if (receiverData.target_visible) {
+                        visibilityBadge.textContent = `Visible (${receiverData.gateway_count} gateways)`;
+                        visibilityBadge.className = 'status-badge online';
+                    } else {
+                        visibilityBadge.textContent = 'Not Visible';
+                        visibilityBadge.className = 'status-badge offline';
+                    }
+                } else {
+                    document.getElementById('tagVisibility').textContent = 'Error';
+                }
+                
+            } catch (error) {
+                console.error('Error checking status:', error);
+                document.getElementById('serverStatus').textContent = 'Offline';
+                document.getElementById('serverStatus').className = 'status-badge offline';
+                document.getElementById('gatewayCount').textContent = 'N/A';
+                document.getElementById('tagVisibility').textContent = 'N/A';
+            }
+        }
+        
+        async function testScraper() {
+            alert('Opening test receiver results...');
+            window.open('/api/receiver/test', '_blank');
+        }
+        
+        // Check status on load
+        checkStatus();
+        
+        // Refresh status every 30 seconds
+        setInterval(checkStatus, 30000);
+    </script>
+</body>
+</html>
+
