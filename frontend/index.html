@@ -181,31 +181,21 @@
                 <div class="menu-description">ติดตามตำแหน่ง Tag แบบเรียลไทม์</div>
             </a>
             
-            <a href="statistics.html" class="menu-card">
-                <div class="menu-icon">STATS</div>
-                <div class="menu-title">Statistics</div>
-                <div class="menu-description">สถิติและ Heatmap การเคลื่อนที่</div>
-            </a>
-            
-            <a href="#" class="menu-card" onclick="testScraper(); return false;">
-                <div class="menu-icon">Test</div>
-                <div class="menu-title">Test Receiver</div>
-                <div class="menu-description">ทดสอบการรับข้อมูลจาก EazyTrax</div>
-            </a>
+
         </div>
-        
+
         <div class="footer">
             <p>BLE Trilateration Indoor Positioning System</p>
         </div>
     </div>
-    
+
     <script>
         // Check authentication
         const token = localStorage.getItem('auth_token');
         if (!token) {
             window.location.href = '/login.html';
         }
-        
+
         // Verify token
         fetch('/api/auth/verify', {
             method: 'POST',
@@ -225,22 +215,22 @@
             localStorage.removeItem('auth_token');
             window.location.href = '/login.html';
         });
-        
+
         // Check server status and load data
         async function checkStatus() {
             try {
                 // Check gateway count
                 const gatewayResponse = await fetch('/api/gateways');
                 const gatewayData = await gatewayResponse.json();
-                
+
                 if (gatewayData.success) {
                     document.getElementById('gatewayCount').textContent = gatewayData.count;
                 }
-                
+
                 // Check receiver status
                 const receiverResponse = await fetch('/api/receiver/test');
                 const receiverData = await receiverResponse.json();
-                
+
                 if (receiverData.success) {
                     const visibilityBadge = document.getElementById('tagVisibility');
                     if (receiverData.target_visible) {
@@ -253,7 +243,7 @@
                 } else {
                     document.getElementById('tagVisibility').textContent = 'Error';
                 }
-                
+
             } catch (error) {
                 console.error('Error checking status:', error);
                 document.getElementById('serverStatus').textContent = 'Offline';
@@ -262,11 +252,8 @@
                 document.getElementById('tagVisibility').textContent = 'N/A';
             }
         }
-        
-        async function testScraper() {
-            alert('Opening test receiver results...');
-            window.open('/api/receiver/test', '_blank');
-        }
+
+
         
         // Check status on load
         checkStatus();

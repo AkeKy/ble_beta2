@@ -35,7 +35,9 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Initialize Database
-db = get_database()
+db_path = os.path.join(os.path.dirname(__file__), 'ble_trilateration.db')
+db = get_database(db_path)
+print(f"\n💾 Database initialized at: {os.path.abspath(db_path)}\n")
 
 # Initialize Auth Manager
 auth_manager = AuthManager()
@@ -47,11 +49,145 @@ ws_server = BLEWebSocketServer(
     secret_key="ble-kku-secret-key-2025"
 )
 
+# Target tag MAC address
+TARGET_TAG = 'C4D36AD87176'
+
 # Initialize Trilateration Calculator
 trilateration = TrilaterationCalculator()
 
 # Initialize Kalman Filter
 kalman_filter = KalmanFilter()
+
+# ฟังก์ชันคำนวณตำแหน่ง tag
+def calculate_tag_position(data):
+    """
+    คำนวณตำแหน่ง tag จากข้อมูล beacon ด้วย trilateration
+    
+    Args:
+        data: ข้อมูล beacon จาก EazyTrax
+        
+    Returns:
+        dict: {'tag_mac': str, 'x': float, 'y': float, 'floor': int, 'accuracy': float, 'gateway_count': int}
+        หรือ None ถ้าคำนวณไม่ได้
+    """
+    try:
+        # แยกข้อมูล gateway-tag pairs
+        gateway_tag_data = {}
+        
+        # รองรับข้อมูล 4 รูปแบบ
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if '_' in str(key):
+                    # รูปแบบที่ 4: "gateway_mac_tag_mac" pairs
+                    parts = str(key).split('_')
+                    if len(parts) >= 2:
+                        gateway_mac = parts[0]
+                        tag_mac = '_'.join(parts[1:])
+                        
+                        # กรองเฉพาะ target tag
+                        if TARGET_TAG.replace(':', '').upper() in tag_mac.replace(':', '').upper():
+                            if isinstance(value, dict) and 'rssi' in value:
+                                rssi = value['rssi']
+                                if gateway_mac not in gateway_tag_data:
+                                    gateway_tag_data[gateway_mac] = rssi
+        
+        # ต้องมีอย่างน้อย 3 gateways
+        if len(gateway_tag_data) < 3:
+            print(f"Not enough gateways: {len(gateway_tag_data)}/3")
+            return None
+        
+        print(f"\n🔍 Found {len(gateway_tag_data)} gateways with tag {TARGET_TAG}:")
+        for gw_mac, rssi in gateway_tag_data.items():
+            print(f"  - {gw_mac}: {rssi} dBm")
+        
+        # โหลดตำแหน่ง gateways จากฐานข้อมูล
+        beacon_positions = []
+        rssi_values = []
+        gateway_floor = None
+        
+        for gateway_mac, rssi in gateway_tag_data.items():
+            # แปลง MAC เป็นรูปแบบที่ถูกต้อง (uppercase, no colons)
+            formatted_mac = gateway_mac.replace(':', '').upper()
+            
+            # แก้ไข: EazyTrax ส่ง MAC ที่มี B แทน 8 ในตำแหน่งที่ 6
+            # ตัวอย่าง: 9C8CDBC7E93A -> 9C8CD8C7E93A
+            if len(formatted_mac) == 12 and formatted_mac[5] == 'B':
+                formatted_mac = formatted_mac[:5] + '8' + formatted_mac[6:]
+                print(f"  🔧 Fixed MAC: {gateway_mac} -> {formatted_mac}")
+            
+            print(f"  🔎 Searching for gateway: {formatted_mac}")
+            print(f"      Database path: {os.path.abspath(db.db_path)}")
+            
+            # ค้นหา gateway จากฐานข้อมูล
+            gateway = db.get_gateway(formatted_mac)
+            print(f"      Result: {gateway}")
+            if gateway:
+                print(f"    ✅ Found in DB: ({gateway['x']}, {gateway['y']}) on floor {gateway['floor']}")
+                beacon_positions.append((gateway['x'], gateway['y']))
+                rssi_values.append(rssi)
+                if gateway_floor is None:
+                    gateway_floor = gateway['floor']
+            else:
+                print(f"    ❌ Not found in database")
+        
+        # ต้องมีอย่างน้อย 3 gateways ที่มีพิกัด
+        if len(beacon_positions) < 3:
+            print(f"Not enough gateways with coordinates: {len(beacon_positions)}/3")
+            return None
+        
+        # คำนวณตำแหน่งด้วย trilateration
+        position = trilateration.calculate_position_from_rssi(beacon_positions, rssi_values)
+        
+        if position:
+            x, y = position
+            
+            # คำนวณค่าความแม่นยำ
+            distances = [trilateration.rssi_to_distance(rssi) for rssi in rssi_values]
+            beacons_with_distance = [(pos[0], pos[1], dist) 
+                                    for pos, dist in zip(beacon_positions, distances)]
+            accuracy = trilateration.calculate_error(position, beacons_with_distance)
+            
+            return {
+                'tag_mac': TARGET_TAG,
+                'x': round(x, 2),
+                'y': round(y, 2),
+                'floor': gateway_floor,
+                'accuracy': round(accuracy, 2),
+                'gateway_count': len(beacon_positions)
+            }
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error calculating tag position: {e}", exc_info=True)
+        return None
+
+# Callback สำหรับส่งข้อมูล beacon ไปยัง frontend
+def on_beacon_data(data):
+    """
+    Callback ที่ถูกเรียกเมื่อได้รับข้อมูล beacon จาก EazyTrax
+    ส่งข้อมูลไปยัง frontend ผ่าน SocketIO
+    พร้อมคำนวณตำแหน่ง tag ด้วย trilateration
+    """
+    try:
+        # ส่งข้อมูล beacon ดิบไปยัง frontend
+        socketio.emit('beacon_data', data)
+        
+        # คำนวณตำแหน่ง tag
+        position = calculate_tag_position(data)
+        if position:
+            # ส่งตำแหน่งที่คำนวณได้ไปยัง frontend
+            socketio.emit('tag_position', position)
+            print(f"\n✅ TAG POSITION CALCULATED: {position}\n")
+        else:
+            print(f"\n❌ Cannot calculate position (need 3+ gateways with coordinates)\n")
+            
+    except Exception as e:
+        print(f"\n❌ ERROR in beacon callback: {e}\n")
+        logger.error(f"Error in beacon data callback: {e}", exc_info=True)
+
+# ตั้งค่า callback
+ws_server.on_data_callback = on_beacon_data
 
 # Global state
 tracking_active = False

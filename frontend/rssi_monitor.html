@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSSI Monitor - Table View</title>
+
+    <!-- Socket.IO Client -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .header-stats {
+            display: flex;
+            gap: 30px;
+            font-size: 14px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-badge {
+            background: rgba(255,255,255,0.2);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        .controls {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 200px;
+            max-width: 400px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-group label {
+            font-size: 14px;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        .filter-group select {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            max-height: calc(100vh - 300px);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+            white-space: nowrap;
+        }
+
+        th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th.sortable:hover {
+            background: #e9ecef;
+        }
+
+        tbody tr {
+            border-bottom: 1px solid #dee2e6;
+            transition: background 0.2s;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        tbody tr.updated {
+            animation: highlight 0.5s;
+        }
+
+        @keyframes highlight {
+            0% { background: #fff3cd; }
+            100% { background: transparent; }
+        }
+
+        td {
+            padding: 12px 16px;
+            font-size: 14px;
+            color: #212529;
+        }
+
+        .gateway-cell {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #495057;
+        }
+
+        .last-seen-cell {
+            color: #6c757d;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+
+        .tag-cell {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+            color: #212529;
+        }
+
+        .rssi-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .rssi-value {
+            font-weight: 600;
+            min-width: 50px;
+        }
+
+        .rssi-value.excellent { color: #28a745; }
+        .rssi-value.good { color: #5cb85c; }
+        .rssi-value.fair { color: #ffc107; }
+        .rssi-value.poor { color: #fd7e14; }
+        .rssi-value.very-poor { color: #dc3545; }
+
+        .rssi-bar-container {
+            flex: 1;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            max-width: 200px;
+        }
+
+        .rssi-bar {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s, background 0.3s;
+        }
+
+        .rssi-bar.excellent { background: #28a745; }
+        .rssi-bar.good { background: #5cb85c; }
+        .rssi-bar.fair { background: #ffc107; }
+        .rssi-bar.poor { background: #fd7e14; }
+        .rssi-bar.very-poor { background: #dc3545; }
+
+        .no-data {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+
+        .no-data-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-indicator.connected {
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.disconnected {
+            background: #dc3545;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .refresh-info {
+            font-size: 12px;
+            color: #6c757d;
+            font-style: italic;
+        }
+
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .search-box {
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📡 RSSI Monitor - Real-time BLE Tag Tracking</h1>
+            <div class="header-stats">
+                <div class="stat-item">
+                    <span class="status-indicator" id="statusIndicator"></span>
+                    <span id="statusText">กำลังเชื่อมต่อ...</span>
+                </div>
+                <div class="stat-item">
+                    Tags ทั้งหมด: <span class="stat-badge" id="totalTags">0</span>
+                </div>
+                <div class="stat-item">
+                    Tags ที่มี RSSI: <span class="stat-badge" id="activeTags">0</span>
+                </div>
+                <div class="stat-item">
+                    Messages: <span class="stat-badge" id="messageCount">0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="🔍 ค้นหา Tag MAC (เช่น C4D36AD87176 หรือ 7176)...">
+            </div>
+            <div class="filter-group">
+                <label>เรียงตาม:</label>
+                <select id="sortSelect">
+                    <option value="time_desc">เวลา (ล่าสุด)</option>
+                    <option value="rssi_desc">RSSI (แรงสุด)</option>
+                    <option value="rssi_asc">RSSI (อ่อนสุด)</option>
+                    <option value="gateway_asc">Gateway</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" onclick="clearData()">🗑️ ล้างข้อมูล</button>
+            <span class="refresh-info">🔄 Refresh ทุก 5 วินาที</span>
+        </div>
+
+        <div class="table-container">
+            <table id="dataTable">
+                <thead>
+                    <tr>
+                        <th class="sortable" onclick="sortTable('gateway')">Gateway</th>
+                        <th class="sortable" onclick="sortTable('last_seen')">Last Seen</th>
+                        <th class="sortable" onclick="sortTable('tag')">Tag</th>
+                        <th class="sortable" onclick="sortTable('rssi')">RSSI</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr>
+                        <td colspan="4">
+                            <div class="no-data">
+                                <div class="no-data-icon">📡</div>
+                                <div>รอรับข้อมูลจาก WebSocket Server...</div>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Socket.IO connection
+        let socket = null;
+        // เปลี่ยนจาก Map ที่ใช้ tag_mac เป็น key เป็น Map ที่ใช้ "gateway_tag" เป็น key
+        let gatewayTagData = new Map();
+        let messageCount = 0;
+        let pendingUpdates = false;
+
+        // Connect to Socket.IO
+        function connectSocketIO() {
+            try {
+                socket = io();
+
+                socket.on('connect', () => {
+                    console.log('✅ Connected to Socket.IO');
+                    updateConnectionStatus(true);
+                });
+
+                socket.on('beacon_data', (data) => {
+                    handleIncomingData(data);
+                });
+
+                socket.on('disconnect', () => {
+                    console.log('🔌 Socket.IO disconnected');
+                    updateConnectionStatus(false);
+                });
+
+                socket.on('connect_error', (error) => {
+                    console.error('❌ Socket.IO error:', error);
+                    updateConnectionStatus(false);
+                });
+            } catch (error) {
+                console.error('Failed to connect:', error);
+                updateConnectionStatus(false);
+            }
+        }
+
+        // Handle incoming data
+        function handleIncomingData(data) {
+            messageCount++;
+            document.getElementById('messageCount').textContent = messageCount;
+
+            // รูปแบบที่ 1: ข้อมูลเป็น Array ของ Objects
+            if (Array.isArray(data)) {
+                data.forEach(item => {
+                    if (item.tag_mac && item.gateway_mac) {
+                        addGatewayTagData(item.tag_mac, item.gateway_mac, item);
+                    }
+                });
+            }
+            // รูปแบบที่ 2: ข้อมูลมี beacons array
+            else if (data.beacons && Array.isArray(data.beacons)) {
+                const gatewayMac = data.gateway_mac || 'Unknown';
+                const timestamp = data.gateway_timestamp || Math.floor(Date.now() / 1000);
+
+                data.beacons.forEach(beacon => {
+                    if (beacon.tag_mac) {
+                        addGatewayTagData(beacon.tag_mac, gatewayMac, {
+                            ...beacon,
+                            timestamp: beacon.timestamp || timestamp
+                        });
+                    }
+                });
+            }
+            // รูปแบบที่ 3: ข้อมูลเป็น object เดี่ยว
+            else if (data.tag_mac && data.gateway_mac) {
+                addGatewayTagData(data.tag_mac, data.gateway_mac, data);
+            }
+            // รูปแบบที่ 4: Gateway_Tag Pairs (EazyTrax Format)
+            else if (typeof data === 'object' && !Array.isArray(data)) {
+                const keys = Object.keys(data);
+
+                keys.forEach(key => {
+                    if (key.includes('_')) {
+                        const parts = key.split('_');
+                        if (parts.length === 2) {
+                            const gatewayMac = parts[0];
+                            const tagMac = parts[1];
+                            const beaconData = data[key];
+
+                            addGatewayTagData(tagMac, gatewayMac, beaconData);
+                        }
+                    }
+                });
+            }
+
+            // ทำเครื่องหมายว่ามีข้อมูลรอ update
+            pendingUpdates = true;
+        }
+
+        // Add gateway-tag pair data to Map
+        function addGatewayTagData(tagMac, gatewayMac, data) {
+            const tag = tagMac.toUpperCase();
+            const gateway = gatewayMac.toUpperCase();
+            const key = `${gateway}_${tag}`;
+
+            gatewayTagData.set(key, {
+                gateway_mac: gateway,
+                tag_mac: tag,
+                rssi: data.rssi || data.rssi_avg || null,
+                timestamp: data.timestamp || Math.floor(Date.now() / 1000),
+                last_update: Date.now(),
+                data_received: Date.now()
+            });
+        }
+
+        // Update connection status
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+
+            if (connected) {
+                indicator.className = 'status-indicator connected';
+                statusText.textContent = 'เชื่อมต่อแล้ว';
+            } else {
+                indicator.className = 'status-indicator disconnected';
+                statusText.textContent = 'ไม่ได้เชื่อมต่อ';
+            }
+        }
+
+        // Get RSSI color class
+        function getRssiClass(rssi) {
+            if (!rssi) return 'very-poor';
+            if (rssi >= -50) return 'excellent';
+            if (rssi >= -60) return 'good';
+            if (rssi >= -70) return 'fair';
+            if (rssi >= -80) return 'poor';
+            return 'very-poor';
+        }
+
+        // Get RSSI percentage
+        function getRssiPercentage(rssi) {
+            if (!rssi) return 0;
+            const min = -100;
+            const max = -30;
+            const percentage = ((rssi - min) / (max - min)) * 100;
+            return Math.max(0, Math.min(100, percentage));
+        }
+
+        // Format time ago
+        function formatTimeAgo(lastUpdate) {
+            const seconds = Math.floor((Date.now() - lastUpdate) / 1000);
+
+            if (seconds < 5) return 'เมื่อสักครู่';
+            if (seconds < 60) return `${seconds}s`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+            return `${Math.floor(seconds / 3600)}h`;
+        }
+
+        // Render table
+        function renderTable() {
+            const searchTerm = document.getElementById('searchInput').value.toUpperCase();
+            const sortBy = document.getElementById('sortSelect').value;
+
+            // นับจำนวน unique tags
+            const uniqueTags = new Set();
+            gatewayTagData.forEach(item => uniqueTags.add(item.tag_mac));
+
+            // Filter data
+            let filteredData = Array.from(gatewayTagData.values()).filter(item => {
+                // ถ้ามีการค้นหา ให้กรองเฉพาะ tag ที่ตรง
+                if (searchTerm && !item.tag_mac.includes(searchTerm)) {
+                    return false;
+                }
+                return true;
+            });
+
+            // Sort data
+            filteredData.sort((a, b) => {
+                switch (sortBy) {
+                    case 'rssi_desc':
+                        return (b.rssi || -999) - (a.rssi || -999);
+                    case 'rssi_asc':
+                        return (a.rssi || -999) - (b.rssi || -999);
+                    case 'time_desc':
+                        return b.last_update - a.last_update;
+                    case 'gateway_asc':
+                        return a.gateway_mac.localeCompare(b.gateway_mac);
+                    default:
+                        return 0;
+                }
+            });
+
+            // Update statistics
+            document.getElementById('totalTags').textContent = uniqueTags.size;
+            document.getElementById('activeTags').textContent = Array.from(gatewayTagData.values()).filter(t => t.rssi !== null).length;
+
+            // Render table body
+            const tbody = document.getElementById('tableBody');
+
+            if (filteredData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4">
+                            <div class="no-data">
+                                <div class="no-data-icon">🔍</div>
+                                <div>ไม่พบข้อมูลที่ตรงกับเงื่อนไข</div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filteredData.map(item => {
+                const rssiClass = getRssiClass(item.rssi);
+                const rssiPercentage = getRssiPercentage(item.rssi);
+                const timeAgo = formatTimeAgo(item.last_update);
+
+                return `
+                    <tr class="updated" data-key="${item.gateway_mac}_${item.tag_mac}">
+                        <td class="gateway-cell">${item.gateway_mac}</td>
+                        <td class="last-seen-cell">${timeAgo}</td>
+                        <td class="tag-cell">${item.tag_mac}</td>
+                        <td>
+                            <div class="rssi-cell">
+                                <span class="rssi-value ${rssiClass}">
+                                    ${item.rssi !== null ? item.rssi : '--'}
+                                </span>
+                                ${item.rssi !== null ? `
+                                    <div class="rssi-bar-container">
+                                        <div class="rssi-bar ${rssiClass}" style="width: ${rssiPercentage}%"></div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            // Remove animation class after animation completes
+            setTimeout(() => {
+                document.querySelectorAll('.updated').forEach(row => {
+                    row.classList.remove('updated');
+                });
+            }, 500);
+
+            // Reset pending updates flag
+            pendingUpdates = false;
+        }
+
+        // Clear data
+        function clearData() {
+            if (confirm('ต้องการล้างข้อมูลทั้งหมดหรือไม่?')) {
+                gatewayTagData.clear();
+                messageCount = 0;
+                document.getElementById('messageCount').textContent = 0;
+                renderTable();
+            }
+        }
+
+        // Sort table by column
+        function sortTable(column) {
+            const sortSelect = document.getElementById('sortSelect');
+
+            switch(column) {
+                case 'gateway':
+                    sortSelect.value = 'gateway_asc';
+                    break;
+                case 'last_seen':
+                    sortSelect.value = 'time_desc';
+                    break;
+                case 'tag':
+                    // ไม่มี sort by tag ในตัวเลือก
+                    break;
+                case 'rssi':
+                    // Toggle between desc and asc
+                    sortSelect.value = sortSelect.value === 'rssi_desc' ? 'rssi_asc' : 'rssi_desc';
+                    break;
+            }
+
+            renderTable();
+        }
+
+        // Event listeners
+        document.getElementById('searchInput').addEventListener('input', renderTable);
+        document.getElementById('sortSelect').addEventListener('change', renderTable);
+
+        // Batch update every 5 seconds
+        setInterval(() => {
+            if (pendingUpdates) {
+                console.log('🔄 Refreshing table...');
+                renderTable();
+            }
+        }, 5000);
+
+        // Auto refresh "Last Seen" every 5 seconds
+        setInterval(() => {
+            const tbody = document.getElementById('tableBody');
+            const lastSeenCells = tbody.querySelectorAll('.last-seen-cell');
+
+            lastSeenCells.forEach(cell => {
+                const row = cell.closest('tr');
+                if (row && row.dataset.key) {
+                    const item = gatewayTagData.get(row.dataset.key);
+                    if (item) {
+                        cell.textContent = formatTimeAgo(item.last_update);
+                    }
+                }
+            });
+        }, 5000);
+
+        // Initialize
+        connectSocketIO();
+    </script>
+</body>
+</html>
+
